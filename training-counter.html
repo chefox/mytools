@@ -200,9 +200,6 @@
     font-variant-numeric: tabular-nums;
     text-shadow: 1px 1px 3px rgba(78,204,163,0.3);
   }
-  #roundProgress {
-    opacity: 0.5;
-  }
 </style>
 </head>
 <body>
@@ -235,7 +232,7 @@
   </div>
 
   <div class="timer-display">
-    <svg viewBox="0 0 200 200" style="filter: drop-shadow(0 6px 16px rgba(0,0,0,0.18));">
+    <svg viewBox="-15 -15 230 230" style="filter: drop-shadow(0 6px 16px rgba(0,0,0,0.18));">
       <defs>
         <filter id="glowOrange">
           <feGaussianBlur stdDeviation="3" result="blur"/>
@@ -250,10 +247,7 @@
       <circle class="progress-circle" id="progressCircle" cx="100" cy="100" r="90"
         stroke-dasharray="565.48" stroke-dashoffset="565.48" transform="rotate(-90 100 100)"
         filter="url(#glowOrange)"></circle>
-      <circle id="roundSector0" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
-      <circle id="roundSector1" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
-      <circle id="roundSector2" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
-      <circle id="roundSector3" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
+      <circle id="roundBg" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
       <circle id="roundProgress" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" stroke-dasharray="678.58" stroke-dashoffset="678.58" transform="rotate(-90 100 100)" style="transition: stroke-dashoffset 0.05s linear"/>
     </svg>
     <div class="timer-text">
@@ -288,18 +282,14 @@
 
 const ROUND_RADIUS = 108;
 const ROUND_CIRC = 2 * Math.PI * ROUND_RADIUS;
+const roundBg = document.getElementById('roundBg');
 const roundProgress = document.getElementById('roundProgress');
-const roundSectors = [
-  document.getElementById('roundSector0'),
-  document.getElementById('roundSector1'),
-  document.getElementById('roundSector2'),
-  document.getElementById('roundSector3')
-];
 const ROUND_COLORS = {
-  active: 'rgba(232,117,10,0.25)',
-  switch: 'rgba(78,204,163,0.25)',
-  pause: 'rgba(78,204,163,0.25)'
+  active: 'rgba(232,117,10,0.5)',
+  switch: 'rgba(78,204,163,0.5)',
+  pause: 'rgba(78,204,163,0.5)'
 };
+const ROUND_BASE_COLOR = 'rgba(200,200,200,0.08)';
 
 let roundActiveDuration = 0;
 let roundSideDuration = 0;
@@ -308,47 +298,45 @@ let roundTwoSide = false;
 let roundTotalDuration = 0;
 let roundElapsed = 0;
 
+function getRoundPhaseColor(state) {
+  if (state === 'active' || state === 'firstSide' || state === 'secondSide') return ROUND_COLORS.active;
+  if (state === 'switch') return ROUND_COLORS.switch;
+  if (state === 'pause') return ROUND_COLORS.pause;
+  return ROUND_COLORS.active;
+}
+
 function updateRoundSectors() {
   const total = roundTwoSide
     ? roundActiveDuration * 60 + roundSideDuration + roundActiveDuration * 60 + roundPauseDuration * 60
     : roundActiveDuration * 60 + roundPauseDuration * 60;
-  const gap = 3;
+  const gap = 2;
   const phases = roundTwoSide
     ? [roundActiveDuration * 60, roundSideDuration, roundActiveDuration * 60, roundPauseDuration * 60]
     : [roundActiveDuration * 60, roundPauseDuration * 60];
-  const colors = roundTwoSide
-    ? [ROUND_COLORS.active, ROUND_COLORS.switch, ROUND_COLORS.active, ROUND_COLORS.pause]
-    : [ROUND_COLORS.active, ROUND_COLORS.pause];
 
   const availableLen = ROUND_CIRC - gap * phases.length;
-  let offset = 0;
-  for (let i = 0; i < phases.length; i++) {
-    const segLen = (phases[i] / total) * availableLen;
-    const el = roundSectors[i];
-    if (el) {
-      el.setAttribute('stroke-dasharray', `${segLen} ${ROUND_CIRC - segLen}`);
-      el.setAttribute('stroke-dashoffset', offset);
-      el.setAttribute('stroke', colors[i]);
-      el.style.display = '';
-    }
-    offset += segLen + gap;
+  let dasharray = '';
+  for (const p of phases) {
+    const segLen = Math.round((p / total) * availableLen);
+    dasharray += segLen + ' ' + gap + ' ';
   }
-  for (let i = phases.length; i < 4; i++) {
-    if (roundSectors[i]) roundSectors[i].style.display = 'none';
-  }
-  roundActiveDuration = roundActiveDuration;
+  roundBg.setAttribute('stroke-dasharray', dasharray.trim());
+  roundBg.setAttribute('stroke', ROUND_BASE_COLOR);
 }
 
-function updateRoundProgress(fraction) {
+function updateRoundProgress(state) {
+  const fraction = roundElapsed / roundTotalDuration;
   roundProgress.setAttribute('stroke-dashoffset', ROUND_CIRC * (1 - Math.min(Math.max(fraction, 0), 1)));
+  roundProgress.setAttribute('stroke', getRoundPhaseColor(state));
 }
 
 function resetRound() {
   roundProgress.setAttribute('stroke-dashoffset', ROUND_CIRC);
-  roundSectors.forEach(el => { if (el) el.style.display = 'none'; });
+  roundBg.setAttribute('stroke', ROUND_BASE_COLOR);
+  roundBg.setAttribute('stroke-dasharray', '');
 }
 
-  let wakeLock = null;
+let wakeLock = null;
 
 async function requestWakeLock() {
   try {
@@ -499,7 +487,7 @@ document.addEventListener('visibilitychange', () => {
     currentPhaseSeconds = Math.max(0, phaseMs / 1000 - phaseElapsed / 1000);
     roundElapsed += 0.05;
     updateDisplay();
-    updateRoundProgress(roundElapsed / roundTotalDuration);
+    updateRoundProgress(state);
 
     if (currentPhaseSeconds <= 0) {
       if (!twoSide) {
@@ -548,8 +536,8 @@ document.addEventListener('visibilitychange', () => {
       ? activeDuration * 60 + sideDuration + activeDuration * 60 + pauseDuration * 60
       : activeDuration * 60 + pauseDuration * 60;
     roundElapsed = 0;
+    resetRound();
     updateRoundSectors();
-    roundProgress.setAttribute('stroke-dashoffset', ROUND_CIRC);
 
     timerInterval = setInterval(tick, 50);
     requestWakeLock();
