@@ -200,6 +200,9 @@
     font-variant-numeric: tabular-nums;
     text-shadow: 1px 1px 3px rgba(78,204,163,0.3);
   }
+  #roundProgress {
+    opacity: 0.5;
+  }
 </style>
 </head>
 <body>
@@ -247,6 +250,11 @@
       <circle class="progress-circle" id="progressCircle" cx="100" cy="100" r="90"
         stroke-dasharray="565.48" stroke-dashoffset="565.48" transform="rotate(-90 100 100)"
         filter="url(#glowOrange)"></circle>
+      <circle id="roundSector0" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
+      <circle id="roundSector1" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
+      <circle id="roundSector2" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
+      <circle id="roundSector3" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" transform="rotate(-90 100 100)"/>
+      <circle id="roundProgress" cx="100" cy="100" r="108" fill="none" stroke-width="14" stroke-linecap="butt" stroke-dasharray="678.58" stroke-dashoffset="678.58" transform="rotate(-90 100 100)" style="transition: stroke-dashoffset 0.05s linear"/>
     </svg>
     <div class="timer-text">
       <div class="time" id="currentTime">3:00</div>
@@ -277,6 +285,68 @@
   const sideIndicatorEl = document.getElementById('sideIndicator');
   const totalTimeEl = document.getElementById('totalTime');
   const hitSound = new Audio('hit.mp3');
+
+const ROUND_RADIUS = 108;
+const ROUND_CIRC = 2 * Math.PI * ROUND_RADIUS;
+const roundProgress = document.getElementById('roundProgress');
+const roundSectors = [
+  document.getElementById('roundSector0'),
+  document.getElementById('roundSector1'),
+  document.getElementById('roundSector2'),
+  document.getElementById('roundSector3')
+];
+const ROUND_COLORS = {
+  active: 'rgba(232,117,10,0.25)',
+  switch: 'rgba(78,204,163,0.25)',
+  pause: 'rgba(78,204,163,0.25)'
+};
+
+let roundActiveDuration = 0;
+let roundSideDuration = 0;
+let roundPauseDuration = 0;
+let roundTwoSide = false;
+let roundTotalDuration = 0;
+let roundElapsed = 0;
+
+function updateRoundSectors() {
+  const total = roundTwoSide
+    ? roundActiveDuration * 60 + roundSideDuration + roundActiveDuration * 60 + roundPauseDuration * 60
+    : roundActiveDuration * 60 + roundPauseDuration * 60;
+  const gap = 3;
+  const phases = roundTwoSide
+    ? [roundActiveDuration * 60, roundSideDuration, roundActiveDuration * 60, roundPauseDuration * 60]
+    : [roundActiveDuration * 60, roundPauseDuration * 60];
+  const colors = roundTwoSide
+    ? [ROUND_COLORS.active, ROUND_COLORS.switch, ROUND_COLORS.active, ROUND_COLORS.pause]
+    : [ROUND_COLORS.active, ROUND_COLORS.pause];
+
+  const availableLen = ROUND_CIRC - gap * phases.length;
+  let offset = 0;
+  for (let i = 0; i < phases.length; i++) {
+    const segLen = (phases[i] / total) * availableLen;
+    const el = roundSectors[i];
+    if (el) {
+      el.setAttribute('stroke-dasharray', `${segLen} ${ROUND_CIRC - segLen}`);
+      el.setAttribute('stroke-dashoffset', offset);
+      el.setAttribute('stroke', colors[i]);
+      el.style.display = '';
+    }
+    offset += segLen + gap;
+  }
+  for (let i = phases.length; i < 4; i++) {
+    if (roundSectors[i]) roundSectors[i].style.display = 'none';
+  }
+  roundActiveDuration = roundActiveDuration;
+}
+
+function updateRoundProgress(fraction) {
+  roundProgress.setAttribute('stroke-dashoffset', ROUND_CIRC * (1 - Math.min(Math.max(fraction, 0), 1)));
+}
+
+function resetRound() {
+  roundProgress.setAttribute('stroke-dashoffset', ROUND_CIRC);
+  roundSectors.forEach(el => { if (el) el.style.display = 'none'; });
+}
 
   let wakeLock = null;
 
@@ -362,8 +432,7 @@ document.addEventListener('visibilitychange', () => {
 
   function updateDisplay() {
     updateTextDisplay();
-    const isSide = state === 'firstSide' || state === 'secondSide';
-    const phaseMs = isSide ? sideDuration * 1000 : currentPhaseDuration * 60000;
+    const phaseMs = (state === 'switch') ? sideDuration * 1000 : currentPhaseDuration * 60000;
     const elapsedFraction = phaseMs > 0 ? phaseElapsed / phaseMs : 0;
     updateProgress(Math.min(Math.max(elapsedFraction, 0), 1));
   }
@@ -371,6 +440,7 @@ document.addEventListener('visibilitychange', () => {
   function transitionTo(nextState) {
     state = nextState;
     phaseElapsed = 0;
+    if (state === 'firstSide') roundElapsed = 0;
 
     if (!twoSide) {
       if (state === 'pause') {
@@ -388,17 +458,23 @@ document.addEventListener('visibilitychange', () => {
       }
     } else {
       if (state === 'firstSide') {
-        currentPhaseDuration = sideDuration;
-        currentPhaseSeconds = sideDuration;
+        currentPhaseDuration = activeDuration;
+        currentPhaseSeconds = activeDuration * 60;
         currentPhaseEl.textContent = 'First Side';
         sideIndicatorEl.textContent = '⚔ First Side';
-        setPhaseColors('side');
-      } else if (state === 'secondSide') {
+        setPhaseColors('active');
+      } else if (state === 'switch') {
         currentPhaseDuration = sideDuration;
         currentPhaseSeconds = sideDuration;
+        currentPhaseEl.textContent = 'Switch';
+        sideIndicatorEl.textContent = '🔄 Switch';
+        setPhaseColors('side');
+      } else if (state === 'secondSide') {
+        currentPhaseDuration = activeDuration;
+        currentPhaseSeconds = activeDuration * 60;
         currentPhaseEl.textContent = 'Second Side';
         sideIndicatorEl.textContent = '⚔ Second Side';
-        setPhaseColors('side');
+        setPhaseColors('active');
         bellSound();
       } else if (state === 'pause') {
         currentPhaseDuration = pauseDuration;
@@ -419,17 +495,18 @@ document.addEventListener('visibilitychange', () => {
     if (!running) return;
 
     phaseElapsed += 50;
-    const isSide = state === 'firstSide' || state === 'secondSide';
-    const phaseMs = isSide ? sideDuration * 1000 : currentPhaseDuration * 60000;
+    const phaseMs = (state === 'switch') ? sideDuration * 1000 : currentPhaseDuration * 60000;
     currentPhaseSeconds = Math.max(0, phaseMs / 1000 - phaseElapsed / 1000);
-    totalSeconds += 0.05;
+    roundElapsed += 0.05;
     updateDisplay();
+    updateRoundProgress(roundElapsed / roundTotalDuration);
 
     if (currentPhaseSeconds <= 0) {
       if (!twoSide) {
         state = state === 'pause' ? 'active' : 'pause';
       } else {
-        if (state === 'firstSide') state = 'secondSide';
+        if (state === 'firstSide') state = 'switch';
+        else if (state === 'switch') state = 'secondSide';
         else if (state === 'secondSide') state = 'pause';
         else if (state === 'pause') state = 'firstSide';
       }
@@ -463,6 +540,17 @@ document.addEventListener('visibilitychange', () => {
     state = twoSide ? 'firstSide' : 'active';
     transitionTo(state);
 
+    roundActiveDuration = activeDuration;
+    roundSideDuration = sideDuration;
+    roundPauseDuration = pauseDuration;
+    roundTwoSide = twoSide;
+    roundTotalDuration = twoSide
+      ? activeDuration * 60 + sideDuration + activeDuration * 60 + pauseDuration * 60
+      : activeDuration * 60 + pauseDuration * 60;
+    roundElapsed = 0;
+    updateRoundSectors();
+    roundProgress.setAttribute('stroke-dashoffset', ROUND_CIRC);
+
     timerInterval = setInterval(tick, 50);
     requestWakeLock();
   }
@@ -471,6 +559,7 @@ document.addEventListener('visibilitychange', () => {
     running = false;
     clearInterval(timerInterval);
     timerInterval = null;
+    resetRound();
 
     btnStart.disabled = false;
     btnStop.disabled = true;
